@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mold Risk Monitor</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      background: #1e293b;
+      border-radius: 20px;
+      padding: 30px;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+      text-align: center;
+    }
+    h1 { font-size: 1.1rem; font-weight: 600; color: #94a3b8; margin-bottom: 20px; letter-spacing: 1px; }
+    .card { background: #0f172a; border-radius: 14px; padding: 25px; margin-bottom: 20px; }
+    .label { font-size: 0.75rem; font-weight: 700; color: #64748b; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .value { font-size: 3.8rem; font-weight: 800; color: #38bdf8; }
+    .unit { font-size: 1.5rem; color: #64748b; }
+    .status-badge {
+      padding: 16px 20px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      transition: all 0.3s ease;
+    }
+    .status-normal { background: #14532d; color: #4ade80; border: 1px solid #22c55e; }
+    .status-warning { background: #7f1d1d; color: #fca5a5; border: 1px solid #ef4444; animation: pulse 1.5s infinite; }
+    .status-connecting { background: #334155; color: #cbd5e1; }
+    .time { font-size: 0.75rem; color: #64748b; margin-top: 15px; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>LIVING ROOM ENVIRONMENT</h1>
+    
+    <div class="card">
+      <div class="label">5-MIN AVG HUMIDITY</div>
+      <div class="value"><span id="humidity">--</span><span class="unit">%</span></div>
+    </div>
+
+    <div id="badge" class="status-badge status-connecting">
+      Connecting to Secure Broker...
+    </div>
+
+    <div class="time" id="lastUpdated">Awaiting first report...</div>
+  </div>
+
+  <script>
+    // HTTPS Configuration for GitHub Pages using WSS
+    const BROKER_HOST = "broker.hivemq.com";
+    const BROKER_PORT = 8884; // Secure WebSocket Port
+    const TOPIC = "home/livingroom/#";
+
+    const clientId = "ghpages_ui_" + Math.random().toString(16).substring(2, 10);
+    const client = new Paho.MQTT.Client(BROKER_HOST, Number(BROKER_PORT), clientId);
+
+    client.onConnectionLost = (responseObject) => {
+      if (responseObject.errorCode !== 0) {
+        updateBadge("Disconnected - Reconnecting...", "connecting");
+      }
+    };
+
+    client.onMessageArrived = (message) => {
+      const topic = message.destinationName;
+      const payload = message.payloadString;
+      const now = new Date().toLocaleTimeString();
+
+      if (topic.endsWith("avg5min")) {
+        document.getElementById("humidity").innerText = payload;
+        document.getElementById("lastUpdated").innerText = "Last updated: " + now;
+      }
+
+      if (topic.endsWith("mold_status")) {
+        if (payload.includes("WARNING")) {
+          updateBadge("⚠️ HIGH MOLD RISK (>60%)", "warning");
+        } else if (payload.includes("NORMAL")) {
+          updateBadge("✅ SAFE LEVEL (≤60%)", "normal");
+        }
+      }
+    };
+
+    function updateBadge(text, type) {
+      const badge = document.getElementById("badge");
+      badge.innerText = text;
+      badge.className = "status-badge status-" + type;
+    }
+
+    // SSL enabled for HTTPS compatibility
+    client.connect({
+      useSSL: true,
+      onSuccess: () => {
+        updateBadge("Connected - Waiting for Data", "connecting");
+        client.subscribe(TOPIC);
+      },
+      onFailure: (err) => {
+        console.error("SSL MQTT Connection Error:", err);
+        updateBadge("Connection Failed", "warning");
+      }
+    });
+  </script>
+</body>
+</html>
